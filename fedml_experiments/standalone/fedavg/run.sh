@@ -10,4 +10,4 @@
 #python main_fedavg.py --exp_name=data_staleIS_only_6000clients --lr_decay=cosine --use_data_IS --stale_IS_weight
 #python main_fedavg.py --exp_name=standard_3000comrounds --lr_decay=cosine --comm_round=3000
 
-python main_fedavg.py --exp_name=slimmable --lr_decay=cosine --slim_training
+python main_fedavg.py --exp_name=slimmable --lr_decay=cosine --slim_training --wandb_dir=/home/xiao/projects/FedSlim/results
