@@ -28,11 +28,20 @@ class FedAvgTrainer(object):
             self.optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()), lr=self.args.lr,
                                          weight_decay=self.args.wd, amsgrad=True)
         else:
-            raise ValueError("unknown optimizer {}".format(self.args.client_optimizer))
+            raise ValueError("unsupported client optimizer {}".format(self.args.client_optimizer))
         if self.args.lr_decay == 'cosine':
             self.lr_scheduler = lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=args.comm_round, eta_min=args.eta_min)
         else:
             self.lr_scheduler = None
+
+        if self.args.server_optimizer == "sgd":
+            self.server_optimizer = torch.optim.SGD(self.model.parameters(), lr=self.args.server_lr)
+        elif self.args.server_optimizer == 'adam':
+            self.server_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()),
+                                              lr=self.args.server_lr,
+                                              weight_decay=self.args.wd, amsgrad=True)
+        else:
+            raise ValueError("unsupported server optimizer {}".format(self.args.server_optimizer))
 
         self.client_list = []
         #self.client_importance = [ 1e8] * args.client_num_in_total
@@ -112,7 +121,7 @@ class FedAvgTrainer(object):
 
                 if self.args.slim_training:
                     client.model.set_width(self.client_width_dict[client_idx])
-                    client.model.slim(self.args.slim_channels)
+                    client.model.slim(self.args.slim_channels, slim_group=random.choice([0, 1]))
                 # train on new dataset
                 if self.args.use_data_IS and self.args.stale_IS_weight:
                     w, loss = client.train(w_global, stale_is_weight)
@@ -132,12 +141,15 @@ class FedAvgTrainer(object):
             # update global weights
             stale_is_weight = w_global
 
-            if self.args.slim_training:
-                #w_global = self.aggregate_nan(w_locals, w_global)
-                w_global = self.aggregate(w_locals)
-            else:
-                w_global = self.aggregate(w_locals)
-            # logging.info("global weights = " + str(w_glob))
+            w_global = self.server_update(w_locals, w_global)
+
+            # if self.args.slim_training:
+            #     #w_global = self.aggregate_nan(w_locals, w_global)
+            #     #w_global = self.aggregate(w_locals)
+            #     #w_global = self.server_update(w_locals, w_global)
+            # else:
+            #     w_global = self.aggregate(w_locals)
+            # # logging.info("global weights = " + str(w_glob))
 
             # print loss
             if round_idx % 1 == 0:
@@ -153,7 +165,7 @@ class FedAvgTrainer(object):
                             logging.info('Testing using Width_mult:{}'.format(width))
                             self.model.load_state_dict(w_global)
                             self.model.set_width(width)
-                            self.model.slim(self.args.slim_channels)
+                            self.model.slim(self.args.slim_channels, slim_group=0)
                             self.local_test_on_all_clients(self.model, round_idx)
                     else:
                         logging.info('Testing using Width_mult:{}'.format(max(self.widths)))
@@ -182,8 +194,6 @@ class FedAvgTrainer(object):
                     averaged_params[k] += local_model_params[k] * w
         return averaged_params
 
-
-
     def aggregate_nan(self, w_locals, w_global):
         training_num = 0
         for idx in range(len(w_locals)):
@@ -199,6 +209,33 @@ class FedAvgTrainer(object):
             avg_params[is_nan] = w_global[k][is_nan]
             params[k] = avg_params
         return params
+
+    def server_update(self, w_locals, w_global):
+
+
+        training_num = 0
+        for idx in range(len(w_locals)):
+            (sample_num, _) = w_locals[idx]
+            training_num += sample_num
+
+        (sample_num, gradient) = w_locals[0]
+        for k in gradient.keys():
+            for i in range(0, len(w_locals)):
+                local_sample_number, local_model_params = w_locals[i]
+                w = local_sample_number / training_num
+                if i == 0:
+                    gradient[k] = (w_global[k] - local_model_params[k]) * w
+                else:
+                    gradient[k] += (w_global[k] - local_model_params[k] ) * w
+
+        self.model.load_state_dict(w_global)
+        for k, param in self.model.named_parameters():
+            if k in gradient.keys():
+                param.grad = gradient[k]
+
+        self.server_optimizer.step()
+        w = copy.deepcopy(self.model.cpu().state_dict())
+        return w
 
     def local_test_on_all_clients(self, model_global, round_idx):
         

@@ -61,6 +61,12 @@ def add_args(parser):
     parser.add_argument('--client_optimizer', type=str, default='sgd',
                         help='SGD with momentum; adam')
 
+    parser.add_argument('--server_optimizer', type=str, default='adam',
+                        help='SGD with momentum; adam')
+
+    parser.add_argument('--server_lr', type=float, default=0.001, metavar='LR',
+                        help='learning rate for server (default: 0.001)')
+
     parser.add_argument('--exp_name', type=str, default='fedml', help='')
 
     parser.add_argument('--wandb_dir', type=str, default=None, help='')

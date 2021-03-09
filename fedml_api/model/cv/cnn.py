@@ -147,10 +147,10 @@ class CNN_Slimmable(torch.nn.Module):
         self.only_digits = only_digits
         self.conv2d_1 = USConv2d(1, 64, kernel_size=3, us=[False, True])
         self.max_pooling = nn.MaxPool2d(2, stride=2)
-        self.conv2d_2 = USConv2d(64, 128, kernel_size=3, us=[True, False])
+        self.conv2d_2 = USConv2d(64, 128, kernel_size=3, us=[True, True])
         self.flatten = nn.Flatten()
-        self.linear_1 = USLinear(18432, 256, us=[False,False])
-        self.linear_2 = USLinear(256, 10 if only_digits else 62, us=[False, False])
+        self.linear_1 = USLinear(18432, 256, us=[True,True])
+        self.linear_2 = USLinear(256, 10 if only_digits else 62, us=[True, False])
         self.relu = nn.ReLU()
         self.conv2d_2.pre_layer = self.conv2d_1
         self.linear_1.pre_layer = self.conv2d_2
@@ -174,10 +174,10 @@ class CNN_Slimmable(torch.nn.Module):
             if isinstance(module, (USConv2d, USLinear)):
                 module.width_mult = width_mult
 
-    def slim(self, slim_channels='leftmost'):
+    def slim(self, slim_channels='leftmost', slim_group=0):
         for name, module in self.named_children():
             if isinstance(module, (USConv2d, USLinear)):
-                module.slim(slim_channels)
+                module.slim(slim_channels, slim_group=slim_group)
 
     def trimmed_weights(self):
         w = copy.deepcopy(self.cpu().state_dict())
@@ -205,7 +205,7 @@ class USConv2d(nn.Conv2d):
         self.us = us
         self.pre_layer = None
 
-    def slim(self, slim_channels='leftmost'):
+    def slim(self, slim_channels='leftmost', slim_group=0):
         if slim_channels=='leftmost':
             if self.us[0]:
                 in_channel_num = make_divisible(self.in_channels_max * self.width_mult)
@@ -244,6 +244,27 @@ class USConv2d(nn.Conv2d):
                 self.out_channels_index = torch.tensor([i for i in range(start, start + out_channel_num)])
             else:
                 self.out_channels_index = torch.tensor([i for i in range(self.out_channels_max)])
+        elif slim_channels == 'random_fixgroup':
+            if self.us[0]:
+                if isinstance(self.pre_layer, USConv2d):
+                    self.in_channels_index = torch.tensor(self.pre_layer.out_channels_index)
+                else:
+                    raise ValueError('Pre layer should be USConv2d')
+            else:
+                self.in_channels_index = torch.tensor([i for i in range(self.in_channels_max)])
+            if self.us[1]:
+                if self.width_mult == 1.0:
+                    self.out_channels_index = torch.tensor([i for i in range(self.out_channels_max)])
+                elif self.width_mult == 0.5:
+                    out_channel_num = make_divisible(self.out_channels_max * self.width_mult)
+                    if slim_group==0:
+                        self.out_channels_index = torch.tensor([i for i in range(0, out_channel_num)])
+                    else:
+                        self.out_channels_index = torch.tensor([i for i in range(out_channel_num, self.out_channels_max)])
+                else:
+                    raise ValueError('random_fixgroup width should be 1.0 or 0.5')
+            else:
+                self.out_channels_index = torch.tensor([i for i in range(self.out_channels_max)])
         else:
             raise NotImplementedError()
 
@@ -275,7 +296,7 @@ class USLinear(nn.Linear):
         self.pre_layer = None
 
 
-    def slim(self, slim_channels='leftmost'):
+    def slim(self, slim_channels='leftmost', slim_group=0):
         if slim_channels=='leftmost':
             if self.us[0]:
                 in_feature_num = make_divisible(self.in_features_max * self.width_mult)
@@ -303,6 +324,32 @@ class USLinear(nn.Linear):
             if self.us[1]:
                 out_feature_num = make_divisible(self.out_features_max * self.width_mult)
                 self.out_features_index = torch.tensor(np.sort(np.random.choice(self.out_features_max, out_feature_num, False)))
+            else:
+                self.out_features_index = torch.tensor([i for i in range(self.out_features_max)])
+        elif slim_channels == 'random_fixgroup':
+            if self.us[0]:
+                if isinstance(self.pre_layer, USConv2d):
+                    all_indexes = np.arange(self.in_features_max).reshape(self.pre_layer.out_channels_max, -1)
+                    all_indexes = all_indexes[self.pre_layer.out_channels_index, :].flatten()
+                    self.in_features_index = torch.tensor(all_indexes)
+                elif isinstance(self.pre_layer, USLinear):
+                    self.in_features_index = torch.tensor(self.pre_layer.out_features_index)
+                else:
+                    raise ValueError('Pre layer should be USLinear or USConv2d')
+            else:
+                self.in_features_index = torch.tensor([i for i in range(self.in_features_max)])
+            if self.us[1]:
+                if self.width_mult == 1.0:
+                    self.out_features_index = torch.tensor([i for i in range(self.out_features_max)])
+                elif self.width_mult == 0.5:
+                    out_feature_num = make_divisible(self.out_features_max * self.width_mult)
+                    if slim_group == 0 :
+                        self.out_features_index = torch.tensor([i for i in range(0, out_feature_num)])
+                    else:
+                        self.out_features_index = torch.tensor(
+                            [i for i in range(out_feature_num, self.out_features_max)])
+                else:
+                    raise ValueError('random_fixgroup width should be 1.0 or 0.5')
             else:
                 self.out_features_index = torch.tensor([i for i in range(self.out_features_max)])
         elif slim_channels == 'random_group':
