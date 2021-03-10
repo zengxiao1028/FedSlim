@@ -64,8 +64,11 @@ def add_args(parser):
     parser.add_argument('--server_optimizer', type=str, default='adam',
                         help='SGD with momentum; adam')
 
-    parser.add_argument('--server_lr', type=float, default=0.001, metavar='LR',
+    parser.add_argument('--server_lr', type=float, default=0.001, metavar='SLR',
                         help='learning rate for server (default: 0.001)')
+
+    parser.add_argument('--server_gradient_clip', type=float, default=-1,
+                        help='Clips gradient norm of an iterable of parameters when > 0')
 
     parser.add_argument('--exp_name', type=str, default='fedml', help='')
 

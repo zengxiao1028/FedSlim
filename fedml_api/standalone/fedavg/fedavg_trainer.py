@@ -161,7 +161,11 @@ class FedAvgTrainer(object):
             if round_idx % self.args.frequency_of_the_test == 0 or round_idx == self.args.comm_round - 1:
                 if self.args.slim_training:
                     if round_idx == self.args.comm_round - 1:
-                        for width in self.widths:
+                        if 1.0 not in self.widths:
+                            widths = self.widths + [1.0]
+                        else:
+                            widths = self.widths
+                        for width in (widths):
                             logging.info('Testing using Width_mult:{}'.format(width))
                             self.model.load_state_dict(w_global)
                             self.model.set_width(width)
@@ -233,6 +237,8 @@ class FedAvgTrainer(object):
             if k in gradient.keys():
                 param.grad = gradient[k]
 
+        if self.args.server_gradient_clip > 0:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.server_gradient_clip)
         self.server_optimizer.step()
         w = copy.deepcopy(self.model.cpu().state_dict())
         return w
