@@ -169,6 +169,8 @@ class FedAvgTrainer(object):
                             logging.info('Testing using Width_mult:{}'.format(width))
                             self.model.load_state_dict(w_global)
                             self.model.set_width(width)
+                            if self.args.slim_channels == 'random':
+                                self.args.slim_channels = 'magnitude'
                             self.model.slim(self.args.slim_channels, slim_group=0)
                             self.local_test_on_all_clients(self.model, round_idx)
                     else:

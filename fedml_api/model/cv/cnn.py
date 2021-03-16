@@ -217,6 +217,20 @@ class USConv2d(nn.Conv2d):
             else:
                 out_channel_num = self.out_channels_max
             self.out_channels_index = torch.tensor([ i for i in range(out_channel_num)])
+        elif slim_channels == 'magnitude':
+            if self.us[0]:
+                if isinstance(self.pre_layer, USConv2d):
+                    self.in_channels_index = torch.tensor(self.pre_layer.out_channels_index)
+                else:
+                    raise ValueError('Pre layer should be USConv2d')
+            else:
+                self.in_channels_index = torch.tensor([i for i in range(self.in_channels_max)])
+            if self.us[1]:
+                out_channel_num = make_divisible(self.out_channels_max * self.width_mult)
+                v = torch.sum(torch.abs(self.weight), dim=[1,2,3]).detach().cpu()
+                self.out_channels_index = torch.tensor(torch.argsort(v, descending=True)[:out_channel_num])
+            else:
+                self.out_channels_index = torch.tensor([i for i in range(self.out_channels_max)])
         elif slim_channels == 'random':
             if self.us[0]:
                 if isinstance(self.pre_layer, USConv2d):
@@ -233,7 +247,7 @@ class USConv2d(nn.Conv2d):
         elif slim_channels == 'random_group':
             if self.us[0]:
                 if isinstance(self.pre_layer, USConv2d):
-                    self.in_channels_index = torch.tensor(self.pre_layer.out_channels_index)
+                    self.in_channels_index = self.pre_layer.out_channels_index.clone().detach()
                 else:
                     raise ValueError('Pre layer should be USConv2d')
             else:
@@ -309,6 +323,25 @@ class USLinear(nn.Linear):
                 out_feature_num = self.out_features_max
             self.out_features_index = torch.tensor([ i for i in range(out_feature_num)])
 
+        elif slim_channels == 'magnitude':
+            if self.us[0]:
+                if isinstance(self.pre_layer, USConv2d):
+                    all_indexes = np.arange(self.in_features_max).reshape(self.pre_layer.out_channels_max, -1)
+                    all_indexes = all_indexes[self.pre_layer.out_channels_index, :]
+                    all_indexes = all_indexes.flatten()
+                    self.in_features_index = torch.tensor(all_indexes)
+                elif isinstance(self.pre_layer, USLinear):
+                    self.in_features_index = self.pre_layer.out_features_index.clone().detach()
+                else:
+                    raise ValueError('Pre layer should be USLinear or USConv2d')
+            else:
+                self.in_features_index = torch.tensor([i for i in range(self.in_features_max)])
+            if self.us[1]:
+                out_feature_num = make_divisible(self.out_features_max * self.width_mult)
+                v = torch.sum(torch.abs(self.weight),dim=1).detach().cpu()
+                self.out_features_index = torch.tensor(torch.argsort(v,descending=True)[:out_feature_num])
+            else:
+                self.out_features_index = torch.tensor([i for i in range(self.out_features_max)])
         elif slim_channels == 'random':
             if self.us[0]:
                 if isinstance(self.pre_layer, USConv2d):
