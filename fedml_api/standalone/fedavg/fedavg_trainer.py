@@ -121,7 +121,7 @@ class FedAvgTrainer(object):
 
                 if self.args.slim_training:
                     client.model.set_width(self.client_width_dict[client_idx])
-                    client.model.slim(self.args.slim_channels, slim_group=random.choice([0, 1]))
+                    client.model.slim(self.args.slim_channels)
                 # train on new dataset
                 if self.args.use_data_IS and self.args.stale_IS_weight:
                     w, loss = client.train(w_global, stale_is_weight)
@@ -141,15 +141,15 @@ class FedAvgTrainer(object):
             # update global weights
             stale_is_weight = w_global
 
-            w_global = self.server_update(w_locals, w_global)
+            #w_global = self.server_update(w_locals, w_global)
 
-            # if self.args.slim_training:
-            #     #w_global = self.aggregate_nan(w_locals, w_global)
-            #     #w_global = self.aggregate(w_locals)
-            #     #w_global = self.server_update(w_locals, w_global)
-            # else:
-            #     w_global = self.aggregate(w_locals)
-            # # logging.info("global weights = " + str(w_glob))
+            if self.args.slim_training:
+                #w_global = self.aggregate_nan(w_locals, w_global)
+                #w_global = self.aggregate(w_locals)
+                w_global = self.server_update(w_locals, w_global)
+            else:
+                w_global = self.aggregate(w_locals)
+            # logging.info("global weights = " + str(w_glob))
 
             # print loss
             if round_idx % 1 == 0:
@@ -171,7 +171,7 @@ class FedAvgTrainer(object):
                             self.model.set_width(width)
                             if self.args.slim_channels == 'random':
                                 self.args.slim_channels = 'magnitude'
-                            self.model.slim(self.args.slim_channels, slim_group=0)
+                            self.model.slim(self.args.slim_channels)
                             self.local_test_on_all_clients(self.model, round_idx)
                     else:
                         logging.info('Testing using Width_mult:{}'.format(max(self.widths)))

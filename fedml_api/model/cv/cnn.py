@@ -231,6 +231,22 @@ class USConv2d(nn.Conv2d):
                 self.out_channels_index = torch.tensor(torch.argsort(v, descending=True)[:out_channel_num])
             else:
                 self.out_channels_index = torch.tensor([i for i in range(self.out_channels_max)])
+        elif slim_channels == 'stochastic_magnitude':
+            if self.us[0]:
+                if isinstance(self.pre_layer, USConv2d):
+                    self.in_channels_index = torch.tensor(self.pre_layer.out_channels_index)
+                else:
+                    raise ValueError('Pre layer should be USConv2d')
+            else:
+                self.in_channels_index = torch.tensor([i for i in range(self.in_channels_max)])
+            if self.us[1]:
+                out_channel_num = make_divisible(self.out_channels_max * self.width_mult)
+                v = torch.sum(torch.abs(self.weight), dim=[1,2,3]).detach().cpu().numpy()
+                v = np.exp( v / np.sum(v) )
+                v = v / np.sum(v)
+                self.out_channels_index = torch.tensor(np.random.choice(self.out_channels_max,out_channel_num,False,p=v))
+            else:
+                self.out_channels_index = torch.tensor([i for i in range(self.out_channels_max)])
         elif slim_channels == 'random':
             if self.us[0]:
                 if isinstance(self.pre_layer, USConv2d):
@@ -256,27 +272,6 @@ class USConv2d(nn.Conv2d):
                 out_channel_num = make_divisible(self.out_channels_max * self.width_mult)
                 start = np.random.randint(0, self.out_channels_max - out_channel_num + 1)
                 self.out_channels_index = torch.tensor([i for i in range(start, start + out_channel_num)])
-            else:
-                self.out_channels_index = torch.tensor([i for i in range(self.out_channels_max)])
-        elif slim_channels == 'random_fixgroup':
-            if self.us[0]:
-                if isinstance(self.pre_layer, USConv2d):
-                    self.in_channels_index = torch.tensor(self.pre_layer.out_channels_index)
-                else:
-                    raise ValueError('Pre layer should be USConv2d')
-            else:
-                self.in_channels_index = torch.tensor([i for i in range(self.in_channels_max)])
-            if self.us[1]:
-                if self.width_mult == 1.0:
-                    self.out_channels_index = torch.tensor([i for i in range(self.out_channels_max)])
-                elif self.width_mult == 0.5:
-                    out_channel_num = make_divisible(self.out_channels_max * self.width_mult)
-                    if slim_group==0:
-                        self.out_channels_index = torch.tensor([i for i in range(0, out_channel_num)])
-                    else:
-                        self.out_channels_index = torch.tensor([i for i in range(out_channel_num, self.out_channels_max)])
-                else:
-                    raise ValueError('random_fixgroup width should be 1.0 or 0.5')
             else:
                 self.out_channels_index = torch.tensor([i for i in range(self.out_channels_max)])
         else:
@@ -342,6 +337,27 @@ class USLinear(nn.Linear):
                 self.out_features_index = torch.tensor(torch.argsort(v,descending=True)[:out_feature_num])
             else:
                 self.out_features_index = torch.tensor([i for i in range(self.out_features_max)])
+        elif slim_channels == 'stochastic_magnitude':
+            if self.us[0]:
+                if isinstance(self.pre_layer, USConv2d):
+                    all_indexes = np.arange(self.in_features_max).reshape(self.pre_layer.out_channels_max, -1)
+                    all_indexes = all_indexes[self.pre_layer.out_channels_index, :]
+                    all_indexes = all_indexes.flatten()
+                    self.in_features_index = torch.tensor(all_indexes)
+                elif isinstance(self.pre_layer, USLinear):
+                    self.in_features_index = self.pre_layer.out_features_index.clone().detach()
+                else:
+                    raise ValueError('Pre layer should be USLinear or USConv2d')
+            else:
+                self.in_features_index = torch.tensor([i for i in range(self.in_features_max)])
+            if self.us[1]:
+                out_feature_num = make_divisible(self.out_features_max * self.width_mult)
+                v = torch.sum(torch.abs(self.weight),dim=1).detach().cpu().numpy()
+                v = np.exp(v / np.sum(v))
+                v = v / np.sum(v)
+                self.out_features_index = torch.tensor(np.random.choice(self.out_features_max, out_feature_num,False,p=v))
+            else:
+                self.out_features_index = torch.tensor([i for i in range(self.out_features_max)])
         elif slim_channels == 'random':
             if self.us[0]:
                 if isinstance(self.pre_layer, USConv2d):
@@ -357,32 +373,6 @@ class USLinear(nn.Linear):
             if self.us[1]:
                 out_feature_num = make_divisible(self.out_features_max * self.width_mult)
                 self.out_features_index = torch.tensor(np.sort(np.random.choice(self.out_features_max, out_feature_num, False)))
-            else:
-                self.out_features_index = torch.tensor([i for i in range(self.out_features_max)])
-        elif slim_channels == 'random_fixgroup':
-            if self.us[0]:
-                if isinstance(self.pre_layer, USConv2d):
-                    all_indexes = np.arange(self.in_features_max).reshape(self.pre_layer.out_channels_max, -1)
-                    all_indexes = all_indexes[self.pre_layer.out_channels_index, :].flatten()
-                    self.in_features_index = torch.tensor(all_indexes)
-                elif isinstance(self.pre_layer, USLinear):
-                    self.in_features_index = torch.tensor(self.pre_layer.out_features_index)
-                else:
-                    raise ValueError('Pre layer should be USLinear or USConv2d')
-            else:
-                self.in_features_index = torch.tensor([i for i in range(self.in_features_max)])
-            if self.us[1]:
-                if self.width_mult == 1.0:
-                    self.out_features_index = torch.tensor([i for i in range(self.out_features_max)])
-                elif self.width_mult == 0.5:
-                    out_feature_num = make_divisible(self.out_features_max * self.width_mult)
-                    if slim_group == 0 :
-                        self.out_features_index = torch.tensor([i for i in range(0, out_feature_num)])
-                    else:
-                        self.out_features_index = torch.tensor(
-                            [i for i in range(out_feature_num, self.out_features_max)])
-                else:
-                    raise ValueError('random_fixgroup width should be 1.0 or 0.5')
             else:
                 self.out_features_index = torch.tensor([i for i in range(self.out_features_max)])
         elif slim_channels == 'random_group':
