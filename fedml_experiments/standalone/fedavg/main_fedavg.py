@@ -23,7 +23,7 @@ from fedml_api.data_preprocessing.ImageNet.data_loader import load_partition_dat
 from fedml_api.data_preprocessing.Landmarks.data_loader import load_partition_data_landmarks
 from fedml_api.model.cv.mobilenet import mobilenet
 from fedml_api.model.cv.resnet import resnet56
-from fedml_api.model.cv.cnn import CNN_DropOut, CNN_Slimmable
+from fedml_api.model.cv.cnn import CNN_DropOut, CNN_Slimmable, CNN_Slimmable_CIFA100
 from fedml_api.data_preprocessing.FederatedEMNIST.data_loader import load_partition_data_federated_emnist
 from fedml_api.model.nlp.rnn import RNN_OriginalFedAvg, RNN_StackOverFlow
 
@@ -296,6 +296,8 @@ def create_model(args, model_name, output_dim):
         model = resnet56(class_num=output_dim)
     elif model_name == "mobilenet":
         model = mobilenet(class_num=output_dim)
+    elif model_name == 'cnn_cifar100' and args.slim_training:
+        model = CNN_Slimmable_CIFA100()
     return model
 
 

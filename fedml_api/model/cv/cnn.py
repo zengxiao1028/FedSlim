@@ -4,6 +4,7 @@ import copy
 import time
 import numpy as np
 import logging
+import torch.nn.functional as F
 class CNN_OriginalFedAvg(torch.nn.Module):
     """The CNN model used in the original FedAvg paper:
     "Communication-Efficient Learning of Deep Networks from Decentralized Data"
@@ -152,9 +153,11 @@ class CNN_Slimmable(torch.nn.Module):
         self.linear_1 = USLinear(18432, 256, us=[True,True])
         self.linear_2 = USLinear(256, 10 if only_digits else 62, us=[True, False])
         self.relu = nn.ReLU()
+
         self.conv2d_2.pre_layer = self.conv2d_1
         self.linear_1.pre_layer = self.conv2d_2
         self.linear_2.pre_layer = self.linear_1
+
     def forward(self, x):
         x = torch.unsqueeze(x, 1)
         x = self.conv2d_1(x)
@@ -192,6 +195,71 @@ class CNN_Slimmable(torch.nn.Module):
                     w[name+'.bias'][module.out_features:] = torch.tensor(float('nan'))
         return w
 
+class CNN_Slimmable_CIFA100(torch.nn.Module):
+    def __init__(self):
+        super(CNN_Slimmable_CIFA100, self).__init__()
+        self.conv2d_1 = USConv2d(3, 32, kernel_size=5, us=[False, True])
+        self.relu = nn.ReLU()
+        self.max_pooling1 = nn.MaxPool2d(2, stride=2)
+        self.conv2d_2 = USConv2d(32, 64, kernel_size=5, us=[True, True])
+        self.max_pooling2 = nn.MaxPool2d(2, stride=2)
+        self.conv2d_3 = USConv2d(64, 256, kernel_size=3,  us=[True, True])
+        #self.conv2d_4 = USConv2d(128, 256, kernel_size=3, padding=1, us=[True, True])
+        self.flatten = nn.Flatten()
+        self.linear_1 = USLinear(256, 256, us=[True,True])
+        self.linear_2 = USLinear(256, 100, us=[True, False])
+
+        self.conv2d_2.pre_layer = self.conv2d_1
+        self.conv2d_3.pre_layer = self.conv2d_2
+        #self.conv2d_4.pre_layer = self.conv2d_3
+        self.linear_1.pre_layer = self.conv2d_3
+        self.linear_2.pre_layer = self.linear_1
+
+    def forward(self, x):
+        #x = torch.unsqueeze(x, 1)
+        x = self.conv2d_1(x)
+        x = self.relu(x)
+        x = self.max_pooling1(x)
+        x = self.conv2d_2(x)
+        x = self.relu(x)
+        x = self.max_pooling2(x)
+        x = self.conv2d_3(x)
+        x = self.relu(x)
+        # x = self.conv2d_4(x)
+        # x = self.relu(x)
+        x = F.adaptive_avg_pool2d(x, (1,1))
+        x = self.flatten(x)
+        x = self.linear_1(x)
+        x = self.relu(x)
+        x = self.linear_2(x)
+
+
+        return x
+
+    def set_width(self, width_mult):
+        for name, module in self.named_children():
+            if isinstance(module, (USConv2d, USLinear)):
+                module.width_mult = width_mult
+
+    def slim(self, slim_channels='leftmost', slim_group=0):
+        for name, module in self.named_children():
+            if isinstance(module, (USConv2d, USLinear)):
+                module.slim(slim_channels, slim_group=slim_group)
+
+    def trimmed_weights(self):
+        w = copy.deepcopy(self.cpu().state_dict())
+        for name, module in self.named_children():
+            if isinstance(module, USConv2d):
+                w[name+'.weight'][module.out_channels:, module.in_channels:, :, :] = torch.tensor(float('nan'))
+                if module.bias is not None:
+                    w[name+'.bias'][module.out_channels:] = torch.tensor(float('nan'))
+            elif isinstance(module, USLinear):
+                w[name+'.weight'][module.out_features:, module.in_features:] = torch.tensor(float('nan'))
+                if module.bias is not None:
+                    w[name+'.bias'][module.out_features:] = torch.tensor(float('nan'))
+        return w
+
+
 class USConv2d(nn.Conv2d):
     def __init__(self, in_channels, out_channels,
                  kernel_size, stride=1, padding=0, dilation=1, groups=1, depthwise=False, bias=True, width_mult=1.0,
@@ -206,7 +274,7 @@ class USConv2d(nn.Conv2d):
         self.pre_layer = None
 
     def slim(self, slim_channels='leftmost', slim_group=0):
-        if slim_channels=='leftmost':
+        if slim_channels == 'leftmost':
             if self.us[0]:
                 in_channel_num = make_divisible(self.in_channels_max * self.width_mult)
             else:
@@ -281,8 +349,8 @@ class USConv2d(nn.Conv2d):
 
         self.groups = self.in_channels if self.depthwise else 1
 
-        #weight = self.weight[:len(self.out_channels_index), :len(self.in_channels_index), :, :]
         weight = self.weight[self.out_channels_index, :, :, :][:, self.in_channels_index, :, :]
+
 
         if self.bias is not None:
            bias = self.bias[self.out_channels_index]

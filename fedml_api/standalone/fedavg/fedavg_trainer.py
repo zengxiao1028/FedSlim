@@ -96,7 +96,7 @@ class FedAvgTrainer(object):
         stale_is_weight = w_global
         if self.args.slim_training:
             self.widths = self.args.slim_widths
-            self.client_width_dict = {client_index: random.choice(self.widths) for client_index in range(self.args.client_num_in_total)}
+            self.client_width_dict = {client_index: np.random.choice(self.widths, replace=False, p =[0.225,0.225,0.225,0.325]) for client_index in range(self.args.client_num_in_total)}
         for round_idx in range(self.args.comm_round):
             
             #logging.info("################Communication round : {}".format(round_idx))
