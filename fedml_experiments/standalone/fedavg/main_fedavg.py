@@ -121,7 +121,18 @@ def add_args(parser):
     parser.add_argument('--slim_training', action="store_true", default=False,
                         help='whether to use slimmable training or not')
 
+    parser.add_argument('--multi_losses', type=float, default=-1,
+                        help='whether to use multi_losses. if multi_losses<0, disable')
+
     parser.add_argument("--slim_widths", nargs="+", type=float, default=[0.5, 1.0])
+
+    parser.add_argument("--widths_dist", nargs="+", type=float, default=[])
+
+    parser.add_argument('--select_width', type=float, default=-1,
+                        help='(for baseline) only train clients with the widths higher than select_width')
+
+
+
 
     parser.add_argument('--slim_channels', type=str, default='leftmost', help='')
 
@@ -279,7 +290,7 @@ def create_model(args, model_name, output_dim):
 
     elif model_name == "resnet18_gn" and args.dataset == "fed_cifar100":
         logging.info("ResNet18_GN + Federated_CIFAR100")
-        model = resnet18()
+        model = resnet18( num_classes=100)
     elif model_name == "rnn" and args.dataset == "shakespeare":
         logging.info("RNN + shakespeare")
         model = RNN_OriginalFedAvg()

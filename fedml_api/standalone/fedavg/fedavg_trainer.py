@@ -96,19 +96,27 @@ class FedAvgTrainer(object):
         stale_is_weight = w_global
         if self.args.slim_training:
             self.widths = self.args.slim_widths
-            self.client_width_dict = {client_index: np.random.choice(self.widths, replace=False, p =[0.225,0.225,0.225,0.325]) for client_index in range(self.args.client_num_in_total)}
+            self.widths_dist = self.args.widths_dist
+            if len(self.widths_dist) == 0:
+                self.widths_dist = [1/len(self.widths) for _ in self.widths]
+            self.client_width_dict = {client_index: np.random.choice(self.widths, replace=False, p =self.widths_dist) for client_index in range(self.args.client_num_in_total)}
+            if self.args.select_width > 0: # baseline
+                for index in self.client_width_dict.keys():
+                    if self.client_width_dict[index] >= self.args.select_width:
+                        self.client_width_dict[index] = self.args.select_width
         for round_idx in range(self.args.comm_round):
             
             #logging.info("################Communication round : {}".format(round_idx))
 
             w_locals, loss_locals = [], []
 
-            """
-            for scalability: following the original FedAvg algorithm, we uniformly sample a fraction of clients in each round.
-            Instead of changing the 'Client' instances, our implementation keeps the 'Client' instances and then updates their local dataset 
-            """
-            client_indexes = self.client_sampling(round_idx, self.args.client_num_in_total,
-                                                  self.args.client_num_per_round)
+
+            if self.args.select_width>0 and self.args.slim_training:
+                all_indexes = [index for index in self.client_width_dict.keys() if self.client_width_dict[index]==self.args.select_width]
+                client_indexes = np.random.choice(all_indexes, self.args.client_num_per_round)
+            else:
+                client_indexes = self.client_sampling(round_idx, self.args.client_num_in_total,
+                                                      self.args.client_num_per_round)
             #logging.info("client_indexes = " + str(client_indexes))
             client_losses = []
 
@@ -120,6 +128,7 @@ class FedAvgTrainer(object):
                                             self.train_data_local_num_dict[client_idx])
 
                 if self.args.slim_training:
+                    client.width_mult = self.client_width_dict[client_idx]
                     client.model.set_width(self.client_width_dict[client_idx])
                     client.model.slim(self.args.slim_channels)
                 # train on new dataset

@@ -55,9 +55,28 @@ class EnhancedCLient(Client):
                 # logging.info("x.size = " + str(x.size()))
                 # logging.info("labels.size = " + str(labels.size()))
                 self.model.zero_grad()
-                log_probs = self.model(x)
-                loss = self.criterion(log_probs, labels)
-                loss.backward()
+
+                if self.args.slim_training and self.args.multi_losses>0:
+                    losses = []
+                    for width in self.args.slim_widths:
+                        if width<=self.width_mult:
+                            self.model.set_width(width)
+                            self.model.slim(self.args.slim_channels)
+                            log_probs = self.model(x)
+                            loss = self.criterion(log_probs, labels)
+                            if width<self.width_mult:
+                                loss = loss*self.args.multi_losses
+                            loss.backward()
+
+                            # if width<self.width_mult:
+                            #     losses.append(self.args.multi_losses*loss)
+                            # else:
+                            #     losses.append(loss)
+                    #loss = torch.sum(torch.stack(losses))
+                else:
+                    log_probs = self.model(x)
+                    loss = self.criterion(log_probs, labels)
+                    loss.backward()
 
                 # to avoid nan loss
                 # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
